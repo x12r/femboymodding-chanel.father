@@ -1,58 +1,71 @@
-from flask import Flask, jsonify
+import json
 import requests
 import secrets
 import string
-
-app = Flask(__name__)
 
 def generate_nonce(length=64):
     chars = string.ascii_letters + string.digits
     return ''.join(secrets.choice(chars) for _ in range(length))
 
-@app.route("/", methods=["GET"])
-def index():
-    return jsonify({
-        "service": "femboymodding api",
-        "endpoints": {
-            "meta_passthrough": "/api/meta/access_token=<ACCESS_TOKEN>"
-        },
-        "forwards_to": "https://graph.oculus.com/me",
-        "fields": [
-            "display_name",
-            "alias",
-            "org_scoped_id",
-            "email"
-        ],
-        "adds": ["nonce"]
-    })
+def handler(request):
+    path = request.path
 
-@app.route("/access_token=<access_token>", methods=["GET"])
-def meta_passthrough(access_token):
-    try:
-        r = requests.get(
-            "https://graph.oculus.com/me",
-            params={
-                "access_token": access_token,
-                "fields": "display_name,alias,org_scoped_id,email"
-            },
-            timeout=10
-        )
+    # Homepage
+    if path == "/api/meta":
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "service": "femboymodding api",
+                "endpoint": "/api/meta/access_token=<ACCESS_TOKEN>",
+                "forwards_to": "https://graph.oculus.com/me",
+                "fields": [
+                    "display_name",
+                    "alias",
+                    "org_scoped_id",
+                    "email"
+                ],
+                "adds": ["nonce"]
+            })
+        }
 
-        meta_json = r.json()
+    # Access token passthrough
+    if "access_token=" in path:
+        access_token = path.split("access_token=", 1)[1]
 
-        # Always add nonce to response
-        meta_json["nonce"] = generate_nonce()
+        try:
+            r = requests.get(
+                "https://graph.oculus.com/me",
+                params={
+                    "access_token": access_token,
+                    "fields": "display_name,alias,org_scoped_id,email"
+                },
+                timeout=10
+            )
 
-        return jsonify(meta_json), r.status_code
+            data = r.json()
+            data["nonce"] = generate_nonce()
 
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": "request to Meta failed",
-            "details": str(e),
-            "nonce": generate_nonce()
-        }), 500
+            return {
+                "statusCode": r.status_code,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps(data)
+            }
 
-# Vercel entrypoint
-def handler(request, *args, **kwargs):
-    return app(request.environ, start_response=lambda *x: None)
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "status": "error",
+                    "message": "request to Meta failed",
+                    "details": str(e),
+                    "nonce": generate_nonce()
+                })
+            }
+
+    return {
+        "statusCode": 404,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"error": "not found"})
+    }
