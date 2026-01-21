@@ -1,5 +1,8 @@
 from flask import Flask, jsonify
-import requests, secrets, string
+import requests
+import secrets
+import string
+import os
 
 app = Flask(__name__)
 
@@ -12,7 +15,11 @@ def index():
     return jsonify({
         "service": "femboymodding api",
         "endpoint": "/meta/access_token=<ACCESS_TOKEN>",
-        "adds": ["nonce"]
+        "adds": ["nonce"],
+        "fields": [
+            "user_id",
+            "org_scoped_id"
+        ]
     })
 
 @app.route("/meta/access_token=<access_token>", methods=["GET"])
@@ -20,13 +27,25 @@ def meta_passthrough(access_token):
     try:
         r = requests.get(
             "https://graph.oculus.com/me",
-            params={"access_token": access_token,
-                    "fields": "display_name,alias,org_scoped_id,email"},
+            params={
+                "access_token": access_token,
+                "fields": "id,org_scoped_id"  # only fetch what we need
+            },
             timeout=10
         )
         data = r.json()
-        data["nonce"] = generate_nonce()
-        return jsonify(data), r.status_code
+
+        # rename id → user_id
+        user_id = data.get("id")
+        org_scoped_id = data.get("org_scoped_id")
+        response = {
+            "user_id": user_id,
+            "org_scoped_id": org_scoped_id,
+            "nonce": generate_nonce()
+        }
+
+        return jsonify(response), r.status_code
+
     except Exception as e:
         return jsonify({
             "status": "error",
@@ -36,4 +55,5 @@ def meta_passthrough(access_token):
         }), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
